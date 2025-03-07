@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "pretraining-test"
+version = "0.1.0"
+description = ""
+authors = ["Michele Lombardi <michele.lombardi2@unibo.it>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+tensorflow = "^2.18.0"
+matplotlib = "^3.10.0"
+scipy = "^1.15.1"
+keras = "^3.8.0"
+scikit-learn = "^1.6.1"
+lightning = "^2.5.0.post0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
