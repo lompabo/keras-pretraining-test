@@ -16,11 +16,6 @@ import torch.nn.functional as F
 import lightning as L
 from torch.utils.data import Dataset
 
-
-# CONFIGURATION
-n_units = 32
-epochs = 1000
-
 def generate_data():
     n_tr = 400
     n_vl = 100
@@ -85,7 +80,6 @@ class TorchLikeInitializer(keras.initializers.Initializer):
 
     def __call__(self, shape, dtype=None):
         fan_in = self.fan_in if self.fan_in else shape[:-1]
-        print('fan_in', fan_in)
         bound = 1/np.sqrt(np.prod(fan_in))
         return keras.random.uniform(shape, -bound, bound, dtype, self.seed)
 
@@ -102,7 +96,7 @@ from keras.src.initializers.initializer import Initializer
 from keras.src.saving import serialization_lib
 
 
-def build_and_train(x, y, inner_units, mode):
+def build_and_train(x, y, inner_units, mode, epochs):
     # Set the backend
     if mode.startswith('keras-tf'):
         os.environ["KERAS_BACKEND"] = "tensorflow"
@@ -152,7 +146,7 @@ def build_and_train(x, y, inner_units, mode):
     return mdl, history
 
 
-def build_and_train_torch(x, y, inner_units):
+def build_and_train_torch(x, y, inner_units, epochs):
     # Custom dataset object
     class MyDataset(Dataset):
         def __init__(self, x, y):
@@ -212,16 +206,19 @@ def loss_plot(history,
     plt.tight_layout()
     return fig
 
-def run_test(mode):
+def run_test(mode, n_units, epochs, plot_history=False):
     # Generate the data
     x, y, x_gt, y_gt, x_vl, y_vl = generate_data()
+
     # Preprocess data
     x_s, y_s, x_gt_s, y_gt_s, x_vl_s, y_vl_s, scaler_x, scaler_y = preprocess_data(x, y, x_gt, y_gt, x_vl, y_vl)
+
     # Build and train a model
     if mode.startswith('keras'):
-        mdl, history = build_and_train(x_s, y_s, n_units, mode)
+        mdl, history = build_and_train(x_s, y_s, n_units, mode, epochs)
     else:
-        mdl = build_and_train_torch(x_s, y_s, n_units)
+        mdl = build_and_train_torch(x_s, y_s, n_units, epochs)
+
     # Build predictions
     if mode.startswith('keras'):
         y_pred = mdl.predict(x_s, verbose=0)
@@ -229,9 +226,9 @@ def run_test(mode):
         with torch.no_grad():
             y_pred = mdl(torch.from_numpy(x_s)).numpy()
 
-    # Manually computed MSE
+    # Compute the MSE
     mse_val = np.mean(np.square(y_pred - y_s))
-    print(f'Final MSE ({mode}): {mse_val}')
+    print(f'MSE ({mode}, {n_units} hidden neurons): {mse_val}')
 
     # Plot
     main_plot(data=(x_s, y_s),
@@ -240,18 +237,38 @@ def run_test(mode):
               ground_truth=(x_gt_s, y_gt_s),
               title=f'Trained model ({mode})')
     plt.savefig(f'main_plot ({mode}).pdf')
+    plt.close()
 
-    if mode.startswith('keras'):
+    if mode.startswith('keras') and plot_history:
         loss_plot(history, title=f'Loss curve ({mode})')
         plt.savefig(f'loss_plot ({mode}).pdf')
+        plt.close()
+
+    return mse_val
+
+def stat_test(mode, n_units, epochs=1000, n_trials=10):
+    res = []
+    for _ in range(n_trials):
+        val = run_test(mode=mode, n_units=n_units, epochs=epochs)
+        res.append(val)
+    return [mode, n_units, np.mean(res), np.std(res)]
 
 if __name__ == "__main__":
-    run_test(mode='keras-tf-default')
-    run_test(mode='keras-tf-custom')
-    run_test(mode='keras-tf-he')
-    run_test(mode='keras-tf-lecun')
-    run_test(mode='keras-torch-default')
-    run_test(mode='keras-torch-custom')
-    run_test(mode='keras-torch-he')
-    run_test(mode='keras-torch-lecun')
-    run_test(mode='native-torch-default')
+    header = ['mode', 'n_units', 'MSE (mean)', 'MSE (std)']
+    res = []
+    for n_units in [16, 32, 64]:
+        res.append(stat_test(mode='keras-tf-default', n_units=n_units))
+        res.append(stat_test(mode='keras-tf-custom', n_units=n_units))
+        res.append(stat_test(mode='keras-tf-he', n_units=n_units))
+        res.append(stat_test(mode='keras-tf-lecun', n_units=n_units))
+        res.append(stat_test(mode='keras-torch-default', n_units=n_units))
+        res.append(stat_test(mode='keras-torch-custom', n_units=n_units))
+        res.append(stat_test(mode='keras-torch-he', n_units=n_units))
+        res.append(stat_test(mode='keras-torch-lecun', n_units=n_units))
+
+    with open('results.csv', 'w') as fp:
+        fp.write(','.join(header) + '\n')
+        for row in res:
+            fp.write(','.join(str(v) for v in row) + '\n')
+
+    # run_test(mode='native-torch-default')
