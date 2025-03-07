@@ -79,11 +79,14 @@ def preprocess_data(x, y, x_gt, y_gt, x_vl, y_vl):
 
 
 class TorchLikeInitializer(keras.initializers.Initializer):
-    def __init__(self, seed=None):
+    def __init__(self, seed=None, fan_in=None):
         self.seed = seed
+        self.fan_in = fan_in
 
     def __call__(self, shape, dtype=None):
-        bound = 1/np.sqrt(np.prod(shape[:-1]))
+        fan_in = self.fan_in if self.fan_in else shape[:-1]
+        print('fan_in', fan_in)
+        bound = 1/np.sqrt(np.prod(fan_in))
         return keras.random.uniform(shape, -bound, bound, dtype, self.seed)
 
     def get_config(self):  # To support serialization
@@ -97,171 +100,6 @@ from keras.src.api_export import keras_export
 from keras.src.backend import random
 from keras.src.initializers.initializer import Initializer
 from keras.src.saving import serialization_lib
-
-
-# class MyRandomInitializer(Initializer):
-#     def __init__(self, seed=None):
-#         self._init_seed = seed
-#         if seed is None:
-#             seed = random.make_default_seed()
-#         elif isinstance(seed, dict):
-#             seed = serialization_lib.deserialize_keras_object(seed)
-#         elif not isinstance(seed, (int, random.SeedGenerator)):
-#             raise ValueError(
-#                 "`seed` argument should be an instance of "
-#                 "`keras.random.SeedGenerator()` or an integer. "
-#                 f"Received: seed={seed}"
-#             )
-#         self.seed = seed
-#
-#     def get_config(self):
-#         seed_config = serialization_lib.serialize_keras_object(self._init_seed)
-#         return {"seed": seed_config}
-#
-#
-#
-# def compute_fans(shape):
-#     """Computes the number of input and output units for a weight shape.
-#
-#     Args:
-#         shape: Integer shape tuple.
-#
-#     Returns:
-#         A tuple of integer scalars: `(fan_in, fan_out)`.
-#     """
-#     shape = tuple(shape)
-#     if len(shape) < 1:  # Just to avoid errors for constants.
-#         fan_in = fan_out = 1
-#     elif len(shape) == 1:
-#         fan_in = fan_out = shape[0]
-#     elif len(shape) == 2:
-#         fan_in = shape[0]
-#         fan_out = shape[1]
-#     else:
-#         # Assuming convolution kernels (2D, 3D, or more).
-#         # kernel shape: (..., input_depth, depth)
-#         receptive_field_size = 1
-#         for dim in shape[:-2]:
-#             receptive_field_size *= dim
-#         fan_in = shape[-2] * receptive_field_size
-#         fan_out = shape[-1] * receptive_field_size
-#     return int(fan_in), int(fan_out)
-#
-#
-#
-# class MyVarianceScaling(MyRandomInitializer):
-#     """Initializer that adapts its scale to the shape of its input tensors.
-#
-#     With `distribution="truncated_normal" or "untruncated_normal"`, samples are
-#     drawn from a truncated/untruncated normal distribution with a mean of zero
-#     and a standard deviation (after truncation, if used) `stddev = sqrt(scale /
-#     n)`, where `n` is:
-#
-#     - number of input units in the weight tensor, if `mode="fan_in"`
-#     - number of output units, if `mode="fan_out"`
-#     - average of the numbers of input and output units, if `mode="fan_avg"`
-#
-#     With `distribution="uniform"`, samples are drawn from a uniform distribution
-#     within `[-limit, limit]`, where `limit = sqrt(3 * scale / n)`.
-#
-#     Examples:
-#
-#     >>> # Standalone usage:
-#     >>> initializer = VarianceScaling(
-#         scale=0.1, mode='fan_in', distribution='uniform')
-#     >>> values = initializer(shape=(2, 2))
-#
-#     >>> # Usage in a Keras layer:
-#     >>> initializer = VarianceScaling(
-#         scale=0.1, mode='fan_in', distribution='uniform')
-#     >>> layer = Dense(3, kernel_initializer=initializer)
-#
-#     Args:
-#         scale: Scaling factor (positive float).
-#         mode: One of `"fan_in"`, `"fan_out"`, `"fan_avg"`.
-#         distribution: Random distribution to use.
-#             One of `"truncated_normal"`, `"untruncated_normal"`, or `"uniform"`.
-#         seed: A Python integer or instance of
-#             `keras.backend.SeedGenerator`.
-#             Used to make the behavior of the initializer
-#             deterministic. Note that an initializer seeded with an integer
-#             or `None` (unseeded) will produce the same random values
-#             across multiple calls. To get different random values
-#             across multiple calls, use as seed an instance
-#             of `keras.backend.SeedGenerator`.
-#     """
-#
-#     def __init__(
-#         self,
-#         scale=1.0,
-#         mode="fan_in",
-#         distribution="truncated_normal",
-#         seed=None,
-#     ):
-#         if scale <= 0.0:
-#             raise ValueError(
-#                 "Argument `scale` must be positive float. "
-#                 f"Received: scale={scale}"
-#             )
-#         allowed_modes = {"fan_in", "fan_out", "fan_avg"}
-#         if mode not in allowed_modes:
-#             raise ValueError(
-#                 f"Invalid `mode` argument: {mode}. "
-#                 f"Please use one of {allowed_modes}"
-#             )
-#         distribution = distribution.lower()
-#         if distribution == "normal":
-#             distribution = "truncated_normal"
-#         allowed_distributions = {
-#             "uniform",
-#             "truncated_normal",
-#             "untruncated_normal",
-#         }
-#         if distribution not in allowed_distributions:
-#             raise ValueError(
-#                 f"Invalid `distribution` argument: {distribution}."
-#                 f"Please use one of {allowed_distributions}"
-#             )
-#         self.scale = scale
-#         self.mode = mode
-#         self.distribution = distribution
-#         super().__init__(seed=seed)
-#
-#     def __call__(self, shape, dtype=None):
-#         scale = self.scale
-#         fan_in, fan_out = compute_fans(shape)
-#         if self.mode == "fan_in":
-#             scale /= max(1.0, fan_in)
-#         elif self.mode == "fan_out":
-#             scale /= max(1.0, fan_out)
-#         else:
-#             scale /= max(1.0, (fan_in + fan_out) / 2.0)
-#         if self.distribution == "truncated_normal":
-#             stddev = math.sqrt(scale) / 0.87962566103423978
-#             return random.truncated_normal(
-#                 shape, mean=0.0, stddev=stddev, dtype=dtype, seed=self.seed
-#             )
-#         elif self.distribution == "untruncated_normal":
-#             stddev = math.sqrt(scale)
-#             return random.normal(
-#                 shape, mean=0.0, stddev=stddev, dtype=dtype, seed=self.seed
-#             )
-#         else:
-#             limit = math.sqrt(3.0 * scale)
-#             print(f'limit: {limit}')
-#             return random.uniform(
-#                 shape, minval=-limit, maxval=limit, dtype=dtype, seed=self.seed
-#             )
-#
-#     def get_config(self):
-#         base_config = super().get_config()
-#         config = {
-#             "scale": self.scale,
-#             "mode": self.mode,
-#             "distribution": self.distribution,
-#         }
-#         return {**base_config, **config}
-
 
 
 def build_and_train(x, y, inner_units, mode):
@@ -281,11 +119,25 @@ def build_and_train(x, y, inner_units, mode):
 
     if mode.endswith('custom'):
         tmp = Dense(units=inner_units, activation='relu',
-                    kernel_initializer=TorchLikeInitializer(),
-                    bias_initializer=TorchLikeInitializer())(tmp)
+                    kernel_initializer=TorchLikeInitializer(fan_in=1),
+                    bias_initializer=TorchLikeInitializer(fan_in=1))(tmp)
         tmp = Dense(units=1, activation='linear',
-                    kernel_initializer=TorchLikeInitializer(),
-                    bias_initializer=TorchLikeInitializer())(tmp)
+                    kernel_initializer=TorchLikeInitializer(fan_in=inner_units),
+                    bias_initializer=TorchLikeInitializer(fan_in=inner_units))(tmp)
+    elif mode.endswith('he'):
+        tmp = Dense(units=inner_units, activation='relu',
+                    kernel_initializer=initializers.HeUniform(),
+                    bias_initializer=initializers.HeUniform())(tmp)
+        tmp = Dense(units=1, activation='linear',
+                    kernel_initializer=initializers.HeUniform(),
+                    bias_initializer=initializers.HeUniform())(tmp)
+    elif mode.endswith('lecun'):
+        tmp = Dense(units=inner_units, activation='relu',
+                    kernel_initializer=initializers.LecunUniform(),
+                    bias_initializer=initializers.LecunUniform())(tmp)
+        tmp = Dense(units=1, activation='linear',
+                    kernel_initializer=initializers.LecunUniform(),
+                    bias_initializer=initializers.LecunUniform())(tmp)
     else:
         tmp = Dense(units=inner_units, activation='relu')(tmp)
         tmp = Dense(units=1, activation='linear')(tmp)
@@ -396,6 +248,10 @@ def run_test(mode):
 if __name__ == "__main__":
     run_test(mode='keras-tf-default')
     run_test(mode='keras-tf-custom')
+    run_test(mode='keras-tf-he')
+    run_test(mode='keras-tf-lecun')
     run_test(mode='keras-torch-default')
     run_test(mode='keras-torch-custom')
+    run_test(mode='keras-torch-he')
+    run_test(mode='keras-torch-lecun')
     run_test(mode='native-torch-default')
